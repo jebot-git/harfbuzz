@@ -28,6 +28,7 @@
  */
 
 #include "hb.hh"
+#include "hb-bdf.hh"
 
 #ifdef HAVE_FREETYPE
 
@@ -1096,79 +1097,6 @@ _hb_ft_font_set_funcs (hb_font_t *font, FT_Face ft_face, bool unref)
 }
 
 
-static hb_blob_t *
-_hb_ft_reference_table (hb_face_t *face HB_UNUSED, hb_tag_t tag, void *user_data)
-{
-  FT_Face ft_face = (FT_Face) user_data;
-  FT_Byte *buffer;
-  FT_ULong  length = 0;
-  FT_Error error;
-
-  /* In new FreeType, a tag value of 1 loads the SFNT table directory. Reject it. */
-  if (tag == 1)
-    return nullptr;
-
-  /* Note: FreeType like HarfBuzz uses the NONE tag for fetching the entire blob */
-
-  error = FT_Load_Sfnt_Table (ft_face, tag, 0, nullptr, &length);
-  if (error)
-    return nullptr;
-
-  buffer = (FT_Byte *) hb_malloc (length);
-  if (!buffer)
-    return nullptr;
-
-  error = FT_Load_Sfnt_Table (ft_face, tag, 0, buffer, &length);
-  if (error)
-  {
-    hb_free (buffer);
-    return nullptr;
-  }
-
-  return hb_blob_create ((const char *) buffer, length,
-			 HB_MEMORY_MODE_WRITABLE,
-			 buffer, hb_free);
-}
-
-static unsigned
-_hb_ft_get_table_tags (const hb_face_t *face HB_UNUSED,
-		       unsigned int start_offset,
-		       unsigned int *table_count,
-		       hb_tag_t *table_tags,
-		       void *user_data)
-{
-  FT_Face ft_face = (FT_Face) user_data;
-
-  FT_ULong population = 0;
-  FT_Sfnt_Table_Info (ft_face,
-		      0, // table_index; ignored
-		      nullptr,
-                      &population);
-
-  if (!table_count)
-    return population;
-  else
-    *table_count = 0;
-
-  if (unlikely (start_offset >= population))
-    return population;
-
-  unsigned end_offset = hb_min (start_offset + *table_count, (unsigned) population);
-  if (unlikely (end_offset < start_offset))
-    return population;
-
-  *table_count = end_offset - start_offset;
-  for (unsigned i = start_offset; i < end_offset; i++)
-  {
-    FT_ULong tag = 0, length;
-    FT_Sfnt_Table_Info (ft_face, i, &tag, &length);
-    table_tags[i - start_offset] = tag;
-  }
-
-  return population;
-}
-
-
 /**
  * hb_ft_face_create:
  * @ft_face: (destroy destroy) (scope notified): FT_Face to work upon
@@ -1197,26 +1125,7 @@ hb_face_t *
 hb_ft_face_create (FT_Face           ft_face,
 		   hb_destroy_func_t destroy)
 {
-  hb_face_t *face;
-
-  if (!ft_face->stream->read) {
-    hb_blob_t *blob;
-
-    blob = hb_blob_create ((const char *) ft_face->stream->base,
-			   (unsigned int) ft_face->stream->size,
-			   HB_MEMORY_MODE_READONLY,
-			   ft_face, destroy);
-    face = hb_face_create (blob, ft_face->face_index);
-    hb_blob_destroy (blob);
-  } else {
-    face = hb_face_create_for_tables (_hb_ft_reference_table, ft_face, destroy);
-    hb_face_set_get_table_tags_func (face, _hb_ft_get_table_tags, ft_face, nullptr);
-  }
-
-  hb_face_set_index (face, ft_face->face_index);
-  hb_face_set_upem (face, ft_face->units_per_EM);
-
-  return face;
+  return _hb_bdf_face_from_ft (ft_face, destroy);
 }
 
 /**
@@ -1327,14 +1236,9 @@ hb_font_t *
 hb_ft_font_create (FT_Face           ft_face,
 		   hb_destroy_func_t destroy)
 {
-  hb_font_t *font;
-  hb_face_t *face;
-
-  face = hb_ft_face_create (ft_face, destroy);
-  font = hb_font_create (face);
+  hb_face_t *face = _hb_bdf_face_from_ft (ft_face, destroy);
+  hb_font_t *font = hb_font_create (face);
   hb_face_destroy (face);
-  _hb_ft_font_set_funcs (font, ft_face, false);
-  hb_ft_font_changed (font);
   return font;
 }
 

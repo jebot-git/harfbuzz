@@ -27,6 +27,7 @@
  */
 
 #include "hb.hh"
+#include "hb-bdf.hh"
 
 #include "hb-face.hh"
 #include "hb-blob.hh"
@@ -79,16 +80,10 @@
 unsigned int
 hb_face_count (hb_blob_t *blob)
 {
-  if (unlikely (!blob))
-    return 0;
-
-  hb_sanitize_context_t c (blob);
-
-  auto *ot = blob->as<OT::OpenTypeFontFile> ();
-  if (unlikely (!ot->sanitize (&c)))
-    return 0;
-
-  return ot->get_face_count ();
+  hb_face_t *bdf = _hb_bdf_face_create (blob, 0);
+  unsigned count = hb_face_get_glyph_count (bdf) ? 1 : 0;
+  hb_face_destroy (bdf);
+  return count;
 }
 
 /*
@@ -127,7 +122,7 @@ DEFINE_NULL_INSTANCE (hb_face_t) =
  * Since: 0.9.2
  **/
 hb_face_t *
-hb_face_create_for_tables (hb_reference_table_func_t  reference_table_func,
+_hb_face_create_for_bitmap (hb_reference_table_func_t  reference_table_func,
 			   void                      *user_data,
 			   hb_destroy_func_t          destroy)
 {
@@ -152,69 +147,14 @@ hb_face_create_for_tables (hb_reference_table_func_t  reference_table_func,
 }
 
 
-typedef struct hb_face_for_data_closure_t {
-  hb_blob_t *blob;
-  uint16_t  index;
-} hb_face_for_data_closure_t;
-
-static hb_face_for_data_closure_t *
-_hb_face_for_data_closure_create (hb_blob_t *blob, unsigned int index)
+/* This fork has no SFNT/table-callback font entry point. */
+hb_face_t *
+hb_face_create_for_tables (hb_reference_table_func_t reference_table_func,
+                          void *user_data, hb_destroy_func_t destroy)
 {
-  hb_face_for_data_closure_t *closure;
-
-  closure = (hb_face_for_data_closure_t *) hb_calloc (1, sizeof (hb_face_for_data_closure_t));
-  if (unlikely (!closure))
-    return nullptr;
-
-  closure->blob = blob;
-  closure->index = (uint16_t) (index & 0xFFFFu);
-
-  return closure;
+  if (destroy) destroy (user_data);
+  return hb_face_get_empty ();
 }
-
-static void
-_hb_face_for_data_closure_destroy (void *data)
-{
-  hb_face_for_data_closure_t *closure = (hb_face_for_data_closure_t *) data;
-
-  hb_blob_destroy (closure->blob);
-  hb_free (closure);
-}
-
-static hb_blob_t *
-_hb_face_for_data_reference_table (hb_face_t *face HB_UNUSED, hb_tag_t tag, void *user_data)
-{
-  hb_face_for_data_closure_t *data = (hb_face_for_data_closure_t *) user_data;
-
-  if (tag == HB_TAG_NONE)
-    return hb_blob_reference (data->blob);
-
-  const OT::OpenTypeFontFile &ot_file = *data->blob->as<OT::OpenTypeFontFile> ();
-  unsigned int base_offset;
-  const OT::OpenTypeFontFace &ot_face = ot_file.get_face (data->index, &base_offset);
-
-  const OT::OpenTypeTable &table = ot_face.get_table_by_tag (tag);
-
-  hb_blob_t *blob = hb_blob_create_sub_blob (data->blob, base_offset + table.offset, table.length);
-
-  return blob;
-}
-
-static unsigned
-_hb_face_for_data_get_table_tags (const hb_face_t *face HB_UNUSED,
-				  unsigned int start_offset,
-				  unsigned int *table_count,
-				  hb_tag_t *table_tags,
-				  void *user_data)
-{
-  hb_face_for_data_closure_t *data = (hb_face_for_data_closure_t *) user_data;
-
-  const OT::OpenTypeFontFile &ot_file = *data->blob->as<OT::OpenTypeFontFile> ();
-  const OT::OpenTypeFontFace &ot_face = ot_file.get_face (data->index);
-
-  return ot_face.get_table_tags (start_offset, table_count, table_tags);
-}
-
 
 /**
  * hb_face_create:
@@ -244,32 +184,7 @@ hb_face_t *
 hb_face_create (hb_blob_t    *blob,
 		unsigned int  index)
 {
-  hb_face_t *face;
-
-  if (unlikely (!blob))
-    blob = hb_blob_get_empty ();
-
-  blob = hb_sanitize_context_t ().sanitize_blob<OT::OpenTypeFontFile> (hb_blob_reference (blob));
-
-  hb_face_for_data_closure_t *closure = _hb_face_for_data_closure_create (blob, index);
-
-  if (unlikely (!closure))
-  {
-    hb_blob_destroy (blob);
-    return hb_face_get_empty ();
-  }
-
-  face = hb_face_create_for_tables (_hb_face_for_data_reference_table,
-				    closure,
-				    _hb_face_for_data_closure_destroy);
-  hb_face_set_get_table_tags_func (face,
-				   _hb_face_for_data_get_table_tags,
-				   closure,
-				   nullptr);
-
-  face->index = index;
-
-  return face;
+  return _hb_bdf_face_create (blob, index);
 }
 
 /**
@@ -955,6 +870,7 @@ void
 hb_face_collect_unicodes (hb_face_t *face,
 			  hb_set_t  *out)
 {
+  if (_hb_bdf_collect_unicodes (face, out)) return;
   face->table.cmap->collect_unicodes (out, face->get_num_glyphs ());
 }
 /**

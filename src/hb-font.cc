@@ -27,6 +27,7 @@
  */
 
 #include "hb.hh"
+#include "hb-bdf.hh"
 
 #include "hb-font.hh"
 #include "hb-draw.hh"
@@ -2120,7 +2121,8 @@ hb_font_create (hb_face_t *face)
 {
   hb_font_t *font = _hb_font_create (face);
 
-  hb_font_set_funcs_using (font, nullptr);
+  if (!_hb_bdf_font_set_funcs (font))
+    hb_font_set_funcs_using (font, nullptr);
 
 #ifndef HB_NO_VAR
   // Initialize variations.
