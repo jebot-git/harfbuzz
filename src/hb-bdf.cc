@@ -33,7 +33,7 @@ hb_face_t *_hb_bdf_face_create (hb_blob_t *blob, unsigned index) {
   const char *bytes = hb_blob_get_data (blob, &length);
   if (FT_Init_FreeType (&d->library) ||
       FT_New_Memory_Face (d->library, reinterpret_cast<const FT_Byte *> (bytes), length, 0, &d->face) ||
-      !FT_Get_Font_Format (d->face) || strcmp (FT_Get_Font_Format (d->face), "BDF") ||
+      !FT_Get_Font_Format (d->face) || (strcmp (FT_Get_Font_Format (d->face), "BDF") && strcmp (FT_Get_Font_Format (d->face), "PCF")) ||
       FT_IS_SCALABLE (d->face) || d->face->num_fixed_sizes != 1 ||
       FT_Select_Charmap (d->face, FT_ENCODING_UNICODE) || FT_Select_Size (d->face, 0) ||
       !d->face->size->metrics.y_ppem || d->face->num_glyphs <= 0) {
@@ -51,7 +51,7 @@ hb_face_t *_hb_bdf_face_create (hb_blob_t *blob, unsigned index) {
 hb_face_t *_hb_bdf_face_from_ft (FT_Face ft, hb_destroy_func_t destroy) {
   hb_face_t *face = hb_face_get_empty ();
   if (ft && ft->stream && !FT_IS_SCALABLE (ft) && FT_Get_Font_Format (ft) &&
-      !strcmp (FT_Get_Font_Format (ft), "BDF") && ft->stream->size <= UINT_MAX) {
+      (!strcmp (FT_Get_Font_Format (ft), "BDF") || !strcmp (FT_Get_Font_Format (ft), "PCF")) && ft->stream->size <= UINT_MAX) {
     unsigned n = ft->stream->size;
     char *bytes = static_cast<char *> (hb_malloc (n));
     if (bytes) {
@@ -136,4 +136,6 @@ bool _hb_bdf_collect_unicodes (hb_face_t *face, hb_set_t *out) {
 }
 
 /* Session policy probe; stock HarfBuzz deliberately has no such symbol. */
-hb_bool_t hb_dome_bdf_only (void) { return true; }
+hb_bool_t hb_dome_bdf_only (void) { return false; }
+hb_bool_t hb_dome_bitmap_only (void) { return true; }
+unsigned hb_dome_bitmap_formats (void) { return 3; }

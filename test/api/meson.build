@@ -108,6 +108,9 @@ foreach source : tests
           libharfbuzz_icu_dep]
   suite = ['api']
   if test_name.contains('-subset') or test_name.contains('-instance')
+    if get_option('subset').disabled()
+      continue
+    endif
     deps += libharfbuzz_subset_dep
     suite += 'subset'
   endif
@@ -126,3 +129,27 @@ foreach source : tests
     env: env,
     suite: suite)
 endforeach
+
+if not get_option('raster').disabled()
+  test('test-raster',
+    executable('test-raster', 'test-raster.cc',
+      include_directories: [incconfig],
+      dependencies: [libharfbuzz_raster_dep],
+      install: false,
+    ),
+    protocol: 'tap',
+    env: env,
+    suite: ['api', 'raster'])
+endif
+
+if not get_option('gpu').disabled()
+  test('test-gpu',
+    executable('test-gpu', 'test-gpu.cc',
+      include_directories: [incconfig],
+      dependencies: [libharfbuzz_gpu_dep],
+      install: false,
+    ),
+    protocol: 'tap',
+    env: env,
+    suite: ['api', 'gpu'])
+endif

@@ -11,5 +11,7 @@ HB_INTERNAL bool _hb_bdf_collect_unicodes (hb_face_t *, hb_set_t *);
 HB_INTERNAL bool _hb_bdf_font_set_funcs (hb_font_t *);
 HB_BEGIN_DECLS
 HB_EXTERN hb_bool_t hb_dome_bdf_only (void);
+HB_EXTERN hb_bool_t hb_dome_bitmap_only (void);
+HB_EXTERN unsigned hb_dome_bitmap_formats (void);
 HB_END_DECLS
 #endif
